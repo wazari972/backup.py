@@ -125,6 +125,25 @@ def create_database(db_file, fs_dir):
     with open(db_file, "w+") as db_f:
         print_filesystem(fs_dir, out_f=db_f)
 
+def is_missing_in_fs(fs_fullpath, db_fullpath):
+    # files are first
+    fs_depth = fs_fullpath.count("/")
+    db_depth = db_fullpath.count("/")
+    if fs_depth != db_depth:
+        if fs_depth > db_depth:
+            # FS is already deeper tha DB,
+            return True # missing in FS
+        else:
+            # DB is deeper than FS
+            return False # missing in DB
+
+    db_name = db_fullpath.rpartition("/")[-1]
+    fs_name = fs_fullpath.rpartition("/")[-1]
+
+    # missing on FS if DB is farther than FS
+    return db_name > fs_name
+
+    
 def compare_entries(fs_dir, fs_entry, db_entry, do_checksum):
     fs_fullpath, fs_relpath, fs_info = fs_entry
     db_relpath, db_info = db_entry
@@ -132,9 +151,19 @@ def compare_entries(fs_dir, fs_entry, db_entry, do_checksum):
     db_fullpath = "{}/{}".format(fs_dir, db_relpath)
 
     if fs_fullpath != db_fullpath:
-        missing_on_fs = db_fullpath > fs_fullpath
-            
-        log.warn("{} # {}".format(fs_relpath, "missing" if missing_on_fs else "new"))
+        missing_on_fs = is_missing_in_fs(fs_fullpath, db_fullpath)
+        
+        if missing_on_fs:
+            log.warn("{} # missing in fs ({})".format(db_relpath, fs_relpath))
+        else:
+            log.warn("{} # new in db ({})".format(fs_relpath, db_relpath))
+        
+        import pdb;pdb.set_trace()
+        is_missing_in_fs(fs_fullpath, db_fullpath)
+        
+        if missing_on_fs:
+            log.error("assert {} doesnt exists".format(db_fullpath))
+            assert not os.path.exists(db_fullpath)
         
         return missing_on_fs, None
 
@@ -168,7 +197,7 @@ def compare_fs_db(fs_dir, db_file, do_checksum):
     count = 0
     db = browse_db(db_file)
     fs = browse_filesystem(fs_dir, do_checksum)
-    ret = None
+    missing_on_fs = None
 
     try:
         new_f = open(NEW_FILES, "w+")
@@ -179,17 +208,19 @@ def compare_fs_db(fs_dir, db_file, do_checksum):
         good, different, missing, new = 0, 0, 0, 0
         
         while True:
-            if ret is None:
+            if missing_on_fs is None:
                 fs_entry = next(fs)
                 
                 if fs_entry is not None:
                     # not a new directory
                     db_entry = next(db)
             
-            elif ret: # is True
-                fs_entry = next(fs)
-            else: # ret is False
+            elif missing_on_fs: # is True
+                # missing in DB, new in FS
                 db_entry = next(db)
+            else: # missing_on_fs is False
+                # missing in FS
+                fs_entry = next(fs)
 
             if fs_entry is None:
                 # new directory
@@ -198,7 +229,7 @@ def compare_fs_db(fs_dir, db_file, do_checksum):
             
             # returns None if could compare,
             #      or db_fullpath > fs_fullpath
-            ret, diff = compare_entries(fs_dir, fs_entry, db_entry, do_checksum)
+            missing_on_fs, diff = compare_entries(fs_dir, fs_entry, db_entry, do_checksum)
             
             fs_fullpath, fs_relpath, fs_info = fs_entry
             db_relpath, db_info = db_entry
@@ -206,7 +237,7 @@ def compare_fs_db(fs_dir, db_file, do_checksum):
             progress(count, total_len)
             count += 1
             
-            if ret is None:
+            if missing_on_fs is None:
                 if not diff:
                     # files are identical
                     print(db_relpath, file=good_f)
@@ -218,12 +249,12 @@ def compare_fs_db(fs_dir, db_file, do_checksum):
                     different += 1
             else:
                 # one of the files is missing
-                if ret:
-                    # on the database
+                if missing_on_fs:
+                    # missing on the filesystem
                     print(fs_fullpath, file=new_f)
                     new += 1
                 else:
-                    # on the filesystem
+                    # missing on the database
                     print(db_relpath, file=missing_f)
                     missing += 1
                 
@@ -252,7 +283,7 @@ def update_database(db_file, fs_dir, do_checksum):
     count = 0
     db = browse_db(db_file)
     fs = browse_filesystem(fs_dir, do_checksum)
-    ret = None
+    missing_on_fs = None
     updated, new, missing, untouched = 0, 0, 0, 0
 
     tmp_db_file = "{}.tmp".format(db_file)
@@ -261,16 +292,16 @@ def update_database(db_file, fs_dir, do_checksum):
         tmp_db_f = open(tmp_db_file, "w+")
         
         while True:
-            if ret is None:
+            if missing_on_fs is None:
                 fs_entry = next(fs)
                 
                 if fs_entry is not None:
                     # not a new directory
                     db_entry = next(db)
             
-            elif ret: # is True
+            elif missing_on_fs: # is True
                 fs_entry = next(fs)
-            else: # ret is False
+            else: # missing_on_fs is False
                 db_entry = next(db)
 
             if fs_entry is None:
@@ -278,9 +309,9 @@ def update_database(db_file, fs_dir, do_checksum):
                 continue 
             
             
-            # returns None if could compare,
+            # missing_on_fsurns None if could compare,
             #      or db_fullpath > fs_fullpath
-            ret, diff = compare_entries(fs_dir, fs_entry, db_entry, do_checksum)
+            missing_on_fs, diff = compare_entries(fs_dir, fs_entry, db_entry, do_checksum)
             
             fs_fullpath, fs_relpath, fs_info = fs_entry
             db_relpath, db_info = db_entry
@@ -289,7 +320,7 @@ def update_database(db_file, fs_dir, do_checksum):
             count += 1
 
             a_file = fs_entry
-            if ret is None:
+            if missing_on_fs is None:
                 if not diff:
                     # files are identical
                     untouched += 1
@@ -302,7 +333,7 @@ def update_database(db_file, fs_dir, do_checksum):
                         ds_entry["md5sum"] = checksum(fullpath)
             else:
                 # the file is missing
-                if ret:
+                if missing_on_fs:
                     # on the database
                     new += 1
                 else:
