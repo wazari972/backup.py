@@ -6,6 +6,7 @@ Usage:
   backup.py create [--db=<db.txt>] [--fs=<local>]
   backup.py update [--db=<db.txt>] [--fs=<local>]
   backup.py check (local | external | rsync | <path>) [--db=<db.txt>] [--checksum]
+  backup.py verify (local | external | rsync | <path>) [--db=<db.txt>]
   backup.py (-h | --help)
   backup.py [--verbose | -v | -vv | -vvv]
   
@@ -22,6 +23,8 @@ from enum import Enum
 import traceback
 
 import logging
+
+
 
 def init_logging():
     LOG_LEVEL = logging.INFO
@@ -40,7 +43,6 @@ def init_logging():
     return log
 
 log = init_logging()
-
 
 TO_IGNORE = [".git", "Other", "tmp", "VIDEO"]
 
@@ -129,19 +131,15 @@ def is_missing_in_fs(fs_fullpath, db_fullpath):
     # files are first
     fs_depth = fs_fullpath.count("/")
     db_depth = db_fullpath.count("/")
-    if fs_depth != db_depth:
-        if fs_depth > db_depth:
-            # FS is already deeper tha DB,
-            return True # missing in FS
-        else:
-            # DB is deeper than FS
-            return False # missing in DB
 
-    db_name = db_fullpath.rpartition("/")[-1]
-    fs_name = fs_fullpath.rpartition("/")[-1]
+    db_dir, _, db_name = db_fullpath.rpartition("/")
+    fs_dir, _, fs_name = fs_fullpath.rpartition("/")
+    
+    if fs_dir != db_dir:
+        # not in the same directory
+        return db_dir < fs_dir
 
-    # missing on FS if DB is farther than FS
-    return db_name > fs_name
+    return db_name < fs_name
 
     
 def compare_entries(fs_dir, fs_entry, db_entry, do_checksum):
@@ -154,15 +152,13 @@ def compare_entries(fs_dir, fs_entry, db_entry, do_checksum):
         missing_on_fs = is_missing_in_fs(fs_fullpath, db_fullpath)
         
         if missing_on_fs:
-            log.warn("{} # missing in fs ({})".format(db_relpath, fs_relpath))
+            log.warn("{} # missing in fs".format(db_relpath, fs_relpath))
         else:
-            log.warn("{} # new in db ({})".format(fs_relpath, db_relpath))
+            log.warn("{} # missing in db".format(fs_relpath, db_relpath))
         
-        import pdb;pdb.set_trace()
         is_missing_in_fs(fs_fullpath, db_fullpath)
         
         if missing_on_fs:
-            log.error("assert {} doesnt exists".format(db_fullpath))
             assert not os.path.exists(db_fullpath)
         
         return missing_on_fs, None
@@ -251,12 +247,12 @@ def compare_fs_db(fs_dir, db_file, do_checksum):
                 # one of the files is missing
                 if missing_on_fs:
                     # missing on the filesystem
-                    print(fs_fullpath, file=new_f)
-                    new += 1
+                    print(fs_fullpath, file=missing_f)
+                    missing += 1
                 else:
                     # missing on the database
-                    print(db_relpath, file=missing_f)
-                    missing += 1
+                    print(db_relpath, file=new_f)
+                    new += 1
                 
                 
     except StopIteration:
@@ -399,7 +395,7 @@ def main(args):
 
             update_database(db_file, fs_dir, do_checksum)
             
-        elif args["check"]:        
+        elif args["check"] or args["verify"]:
             if args["local"]:
                 fs_file = "/var/webalbums"
             elif args["external"]:
@@ -408,19 +404,28 @@ def main(args):
                 raise ValueError("rsync check not implemented yet.")
             else:
                 fs_file = args["<path>"]
-            
-            print("Check {} against {} ({})".format(fs_file, db_file,
-                                                    "checksum" if do_checksum else "fast"))
-            
-            if NOP: raise Done()
 
-            for to_remove in STARTUP_CLEANING:
-                try:
-                    os.remove(to_remove)
-                except OSError: pass
+
+            if args["check"]:
+                print("Check {} against {} ({})".format(fs_file, db_file,
+                                                        "checksum" if do_checksum else "fast"))
+                
+                if NOP: raise Done()
+
+                for to_remove in STARTUP_CLEANING:
+                    try:
+                        os.remove(to_remove)
+                    except OSError: pass
             
-            compare_fs_db(fs_file, db_file, do_checksum)
-            
+                compare_fs_db(fs_file, db_file, do_checksum)
+            else:
+                assert args["verify"]
+                import verify
+                
+                verify.prepare_database(db_file)
+                
+                verify.verify_new(db_file, fs_file)
+                #verify.verify_missing(db_file, fs_file)
         else:
             print(__doc__)
     except Done:
