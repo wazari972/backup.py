@@ -24,8 +24,6 @@ import traceback
 
 import logging
 
-
-
 def init_logging():
     LOG_LEVEL = logging.INFO
     LOGFORMAT = "  %(log_color)s%(levelname)-8s%(reset)s | %(log_color)s%(message)s%(reset)s"
@@ -42,7 +40,7 @@ def init_logging():
 
     return log
 
-log = init_logging()
+log = logging.getLogger('root')
 
 TO_IGNORE = [".git", "Other", "tmp", "VIDEO"]
 
@@ -158,9 +156,6 @@ def compare_entries(fs_dir, fs_entry, db_entry, do_checksum):
         
         is_missing_in_fs(fs_fullpath, db_fullpath)
         
-        if missing_on_fs:
-            assert not os.path.exists(db_fullpath)
-        
         return missing_on_fs, None
 
     errors = {}
@@ -240,18 +235,25 @@ def compare_fs_db(fs_dir, db_file, do_checksum):
                     good += 1
                 else:
                     # there are some differences, in diff dict
-                    print("{}: {}".format(db_relpath, ", ".join(diff.keys())),
+                    print("{} # {}".format(db_relpath, ", ".join(diff.keys())),
                           file=different_f)
                     different += 1
             else:
                 # one of the files is missing
                 if missing_on_fs:
                     # missing on the filesystem
-                    print(fs_fullpath, file=missing_f)
+                    
+                    assert not os.path.exists("{}/{}".format(fs_dir, db_relpath))
+
+                    print(db_relpath, file=missing_f)
                     missing += 1
                 else:
                     # missing on the database
-                    print(db_relpath, file=new_f)
+                    try:
+                        assert os.system('/usr/bin/grep "{}" "{}" --quiet'.format(fs_relpath, db_file)) != 0
+                    except:
+                        import pdb;pdb.set_trace()
+                    print(fs_relpath, file=new_f)
                     new += 1
                 
                 
@@ -423,9 +425,19 @@ def main(args):
                 import verify
                 
                 verify.prepare_database(db_file)
-                
-                verify.verify_new(db_file, fs_file)
-                #verify.verify_missing(db_file, fs_file)
+
+                log.error("New files")
+                log.error("---------")
+                if verify.verify_new(db_file, fs_file):
+                    log.critical("Everythin OK :)")
+                log.error("Missing files")
+                log.error("-------------")
+                if verify.verify_missing(db_file, fs_file):
+                    log.critical("Everythin OK :)")
+                log.error("Different and good files")
+                log.error("------------------------")
+                if verify.verify_different_good(db_file, fs_file, do_good=True):
+                    log.critical("Everythin OK :)")
         else:
             print(__doc__)
     except Done:
@@ -442,4 +454,5 @@ def main(args):
             print("  "+"\n  ".join("{:10s}->  {}".format(k, v) for k, v in args.items() if not v))
             
 if __name__ == '__main__':
+    init_logging()
     main(docopt(__doc__, version='backup.py 0.9'))
