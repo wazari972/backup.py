@@ -1,15 +1,16 @@
 #! /usr/bin/python3
 import os
 import logging
-log = logging.getLogger('root')
+import config
 
-import backup
+log = logging.getLogger('backup.verify')
+
 
 database = set()
 
-def prepare_database(db_file):
+def prepare_database(repo):
     global database
-    with open(db_file) as db_f:
+    with open(repo.db_file) as db_f:
         for line in db_f.readlines():
             database.add(line.partition(" -> ")[0])
     
@@ -24,11 +25,11 @@ def in_filesystem(origin, relpath):
     return os.path.exists(path)
 
 
-def verify_new(db_file, origin):
-    prepare_database(db_file)
+def verify_new(repo, origin):
+    prepare_database(repo)
 
     correct = True
-    with open(backup.NEW_FILES) as new_f:
+    with open(repo.NEW_FILES) as new_f:
         for line in new_f.readlines():
             fname = line[:-1]
 
@@ -40,11 +41,11 @@ def verify_new(db_file, origin):
                 correct = False
     return correct
 
-def verify_missing(db_file, origin):
-    prepare_database(db_file)
+def verify_missing(repo, origin):
+    prepare_database(repo)
 
     correct = True
-    with open(backup.MISSING_FILES) as missing_f:
+    with open(repo.MISSING_FILES) as missing_f:
         for line in missing_f.readlines():
             fname = line[:-1]
 
@@ -56,8 +57,8 @@ def verify_missing(db_file, origin):
                 correct = False
     return correct
 
-def verify_different_good(db_file, origin, do_good=False):
-    prepare_database(db_file)
+def verify_different_good(repo, origin, do_good=False):
+    prepare_database(repo)
     correct = True
     
     def verif(what, line):
@@ -68,7 +69,7 @@ def verify_different_good(db_file, origin, do_good=False):
             log.warn("{}: {} not in filesystem".format(what, fname))
             correct = False
     
-    with open(backup.DIFFERENT_FILES) as different_f:
+    with open(repo.DIFFERENT_FILES) as different_f:
         for line in different_f.readlines():
             fname = line.rpartition(" # ")[0]
             verif("DIFF", line)
@@ -76,11 +77,34 @@ def verify_different_good(db_file, origin, do_good=False):
     if not do_good:
         return correct
 
-    with open(backup.GOOD_FILES) as good_f:
+    with open(repo.GOOD_FILES) as good_f:
         for line in good_f.readlines():
             fname = line[:-1]
 
             verif("GOOD", line)
             
     return correct
+
+def verify_all(repo, fs_dir):
+    log.warn("Verify  {} against {}".format(fs_dir, repo.db_file))
+              
+    prepare_database(repo)
+
+    try:
+        if verify_new(repo, fs_dir):
+            log.info("New files:                   Everythin OK :)")
+    except Exception as e:
+        log.error("Could not verify new files: {}".format(e))
+
+    try:
+        if verify_missing(repo, fs_dir):
+            log.info("Missing files:               Everythin OK :)")
+    except Exception as e:
+        log.error("Could not verify missing files: {}".format(e))
+
+    try:
+        if verify_different_good(repo, fs_dir, do_good=True):
+            log.info("Different and good files:    Everythin OK :)")
+    except Exception as e:
+        log.error("Could not different/good files: {}".format(e))
 
