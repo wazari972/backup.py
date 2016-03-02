@@ -1,13 +1,32 @@
-def update_database(db_file, fs_dir, do_checksum):
-    total_len = db_length(db_file)
+import os
+
+import common, status
+
+import logging; log = logging.getLogger('backup.update')
+
+def do_update(args):
+    fs_dir = os.path.abspath(".")
+
+    repo = common.get_repo(fs_dir)
+
+    if not repo:
+        log.critical("Could not find a repository with {} in copies...".format(fs_dir))
+        return
+
+    do_checksum = args["--checksum"]
+    
+    update_database(repo, fs_dir, do_checksum)
+    
+def update_database(repo, fs_dir, do_checksum):
+    total_len = common.db_length(repo.db_file)
     
     count = 0
-    db = browse_db(db_file)
-    fs = browse_filesystem(fs_dir, do_checksum)
+    db = common.browse_db(repo.db_file)
+    fs = common.browse_filesystem(fs_dir, do_checksum)
     missing_on_fs = None
     updated, new, missing, untouched = 0, 0, 0, 0
 
-    tmp_db_file = "{}.tmp".format(db_file)
+    tmp_db_file = "{}.tmp".format(repo.db_file)
     
     try:
         tmp_db_f = open(tmp_db_file, "w+")
@@ -32,12 +51,12 @@ def update_database(db_file, fs_dir, do_checksum):
             
             # missing_on_fsurns None if could compare,
             #      or db_fullpath > fs_fullpath
-            missing_on_fs, diff = compare_entries(fs_dir, fs_entry, db_entry, do_checksum)
+            missing_on_fs, diff = status.compare_entries(fs_dir, fs_entry, db_entry, do_checksum)
             
             fs_fullpath, fs_relpath, fs_info = fs_entry
             db_relpath, db_info = db_entry
 
-            progress(count, total_len)
+            common.progress(count, total_len)
             count += 1
 
             a_file = fs_entry
@@ -51,7 +70,7 @@ def update_database(db_file, fs_dir, do_checksum):
                     updated += 1
                     if not do_checksum:
                         # force compute the checksum if disabled
-                        ds_entry["md5sum"] = checksum(fullpath)
+                        ds_entry["md5sum"] = common.checksum(fullpath)
             else:
                 # the file is missing
                 if missing_on_fs:
@@ -62,25 +81,25 @@ def update_database(db_file, fs_dir, do_checksum):
                     missing += 1
                     continue # skip this entry
                 
-            print_a_file(a_file, tmp_db_f)
+            common.print_a_file(a_file, tmp_db_f)
             
     except StopIteration:
         print("")
 
         log.critical("Database updated.")
         log.error("{} entries untouched".format(untouched))
-        log.error("{} entries removed".format(missing))
+        log.error("{} entries added".format(missing))
         log.error("{} entries updated".format(updated))
-        log.error("{} entries added".format(new))
+        log.error("{} entries removed".format(new))
 
         tmp_db_f.close()
         tmp_db_f = None # don't close it twice
 
         
-        #try: os.remove(db_file)
-        #except OSError: pass
+        try: os.remove(repo.db_file)
+        except OSError: pass
 
-        #os.rename(tmp_db_file, db_file)
+        os.rename(tmp_db_file, repo.db_file)
         
     finally:
         if tmp_db_f:

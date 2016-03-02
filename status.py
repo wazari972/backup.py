@@ -32,8 +32,6 @@ def do_status(args):
         status(repo, fs_dir, do_checksum)
         
 def status(repo, fs_dir, do_checksum):
-    
-
     log.info("Getting status of {} against repository '{}'.".format(repo.copyname, repo.name))
 
     if config.NOP: return
@@ -164,7 +162,7 @@ def compare_fs_db(repo, fs_dir, do_checksum):
                     missing += 1
                 else:
                     # missing on the database
-                    assert os.system('/usr/bin/grep "{}" "{}" --quiet'.format(fs_relpath, db_file)) != 0
+                    assert os.system('/usr/bin/grep "{}" "{}" --quiet'.format(fs_relpath, repo.db_file)) != 0
                     
                     print(fs_relpath, file=new_f)
                     new += 1

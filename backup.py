@@ -5,10 +5,11 @@
 Usage:
   backup.py init <name> [--force]
   backup.py init from <name> as <backup-name> [--force]
-  backup.py update [--db=<db.txt>] [--fs=<local>]
+  backup.py update [--checksum]
   backup.py status [--checksum]
   backup.py status verify
   backup.py status clean
+  backup.py treat new|missing|updated|all
   backup.py debug info
   backup.py (-h | --help)
 
@@ -46,7 +47,7 @@ def init_logging():
 init_logging()
 log = logging.getLogger('root')
 
-import init, config, status, verify, info
+import init, config, status, verify, info, update, treat
 
 def main(args):
     try: os.mkdir(config.CONFIG_PATH)
@@ -59,14 +60,14 @@ def main(args):
             init.do_init(args)
             
         elif args["update"]:
-            print("Update database {} from {}".format(db_file, fs_dir))
-            
-
-            update_database(db_file, fs_dir, do_checksum)
+            update.do_update(args)
             
         elif args["status"]:
             status.do_status(args)
 
+        elif args["treat"]:
+            treat.do_treat(args)
+            
         elif args["debug"] and args["info"]:
             info.do_info(args)
         else:
