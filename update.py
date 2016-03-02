@@ -30,7 +30,7 @@ def update_database(repo, fs_dir, do_checksum):
     
     try:
         tmp_db_f = open(tmp_db_file, "w+")
-        
+
         while True:
             if missing_on_fs is None:
                 fs_entry = next(fs)
@@ -39,22 +39,33 @@ def update_database(repo, fs_dir, do_checksum):
                     # not a new directory
                     db_entry = next(db)
             
-            elif missing_on_fs: # is True
+            elif db_entry is False or missing_on_fs is True:
                 fs_entry = next(fs)
-            else: # missing_on_fs is False
+            elif fs_entry is False or missing_on_fs is False:
                 db_entry = next(db)
-
+            else:
+                assert False # should not come here
+                
             if fs_entry is None:
                 # new directory
                 continue 
             
+            if fs_entry is False and db_entry is False:
+                raise StopIteration()
+
+            if fs_entry is False: # no more fs entries
+                missing_on_fs = True # so db cannot be on fs
+                db_relpath, db_info = db_entry
+            elif db_entry is False: # no more db entries
+                missing_on_fs = False # so fs cannot be on db
+                fs_fullpath, fs_relpath, fs_info = fs_entry
+            else:
+                # returns None if could compare,
+                #      or db_fullpath > fs_fullpath
+                missing_on_fs, diff = status.compare_entries(fs_dir, fs_entry, db_entry, do_checksum)
             
-            # missing_on_fsurns None if could compare,
-            #      or db_fullpath > fs_fullpath
-            missing_on_fs, diff = status.compare_entries(fs_dir, fs_entry, db_entry, do_checksum)
-            
-            fs_fullpath, fs_relpath, fs_info = fs_entry
-            db_relpath, db_info = db_entry
+                fs_fullpath, fs_relpath, fs_info = fs_entry
+                db_relpath, db_info = db_entry
 
             common.progress(count, total_len)
             count += 1
@@ -76,11 +87,11 @@ def update_database(repo, fs_dir, do_checksum):
                 if missing_on_fs:
                     # on the database
                     new += 1
+                    continue # skip this entry
                 else:
                     # on the filesystem
                     missing += 1
-                    continue # skip this entry
-                
+                    
             common.print_a_file(a_file, tmp_db_f)
             
     except StopIteration:

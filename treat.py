@@ -5,7 +5,7 @@ import tempfile
 import logging
 log = logging.getLogger('root')
 
-import backup
+import common
 
 NOP = False
 
@@ -27,7 +27,7 @@ def do_treat(args):
         treat_updated(repo, fs_dir)
 
 def treat_new(repo, fs_dir):
-    with open(backup.NEW_FILES) as new_f:
+    with open(repo.NEW_FILES) as new_f:
         new_files = [f[:-1] for f in new_f.readlines()]
 
     tmpdir = tempfile.mkdtemp()
@@ -36,13 +36,12 @@ def treat_new(repo, fs_dir):
     os.mkdir(new_dir)
     log.critical("New files in {}".format(new_dir))
     
-
     for new in list(new_files):
         filename = new.replace("/", "_")
 
         src = "{}/{}".format(origin, new)
         if not os.path.exists(src):
-            log.warn("File {} doesn't exist anymore, update database ?".format(src))
+            log.warn("File {} doesn't exist anymore, is the database up-to-date?".format(src))
             new_files.remove(new)
             continue
         
@@ -55,7 +54,8 @@ def treat_new(repo, fs_dir):
     os.system("nemo {}".format(new_dir))
     
     try:
-        log.warn("Delete unwanted files in {} and press Enter to continue or ^C^C to exit.".format(new_dir))
+        log.warn("Delete unwanted files in {}".format(new_dir)
+                 + " and press Enter to continue or ^C^C to exit.")
         input()
     except KeyboardInterrupt:
         print("")

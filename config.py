@@ -5,7 +5,6 @@ DB_FILENAME = "db.txt"
 COPIES_FILENAME = "copies"
 
 DEFAULT_FS_DIR = "/var/webalbums"
-NOP = False
 
 TO_IGNORE = [".git", "Other", "tmp", "VIDEO"]
 

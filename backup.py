@@ -76,11 +76,11 @@ def main(args):
         log.critical(e)
         traceback.print_exc()
     finally:
-        if config.NOP:
-            print("---")
-            print("  "+"\n  ".join("{:10s}->  {}".format(k, v) for k, v in args.items() if v))
-            print("---")
-            print("  "+"\n  ".join("{:10s}->  {}".format(k, v) for k, v in args.items() if not v))
+        pass
+        # print("---")
+        # print("  "+"\n  ".join("{:10s}->  {}".format(k, v) for k, v in args.items() if v))
+        # print("---")
+        # print("  "+"\n  ".join("{:10s}->  {}".format(k, v) for k, v in args.items() if not v))
             
 if __name__ == '__main__':
     main(docopt(__doc__, version='backup.py 0.9'))

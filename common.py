@@ -43,7 +43,9 @@ def browse_filesystem(fs_dir, do_checksum):
                 }
 
             yield fullpath, relpath, info
+            
         yield None
+    yield False
 
 def db_length(db_fname):
     with open(db_fname) as db_f:
@@ -57,6 +59,7 @@ def browse_db(db_fname):
             info = {item.split(": ")[0]: item.split(": ")[1] for item in info_lst}
 
             yield relpath, info
+    yield False
 
 def progress(current, total):
     print("\r%.2f%%" % (current/total*100), end="")

@@ -29,15 +29,13 @@ def do_status(args):
         verify.verify_all(repo, fs_dir) 
     else:
         do_clean()
+
         status(repo, fs_dir, do_checksum)
         
 def status(repo, fs_dir, do_checksum):
-    log.info("Getting status of {} against repository '{}'.".format(repo.copyname, repo.name))
-
-    if config.NOP: return
+    log.info("Getting status of {} ({}) against repository '{}'.".format(repo.copyname, fs_dir, repo.name))
              
     compare_fs_db(repo, fs_dir, do_checksum)
-
 
 def is_missing_in_fs(fs_fullpath, db_fullpath):
     # files are first
@@ -97,6 +95,10 @@ def compare_fs_db(repo, fs_dir, do_checksum):
         return
     
     total_len = common.db_length(repo.db_file)
+
+    if not total_len:
+        log.critical("Database is empty.")
+        return
     
     count = 0
     db = common.browse_db(repo.db_file)
@@ -119,25 +121,36 @@ def compare_fs_db(repo, fs_dir, do_checksum):
                     # not a new directory
                     db_entry = next(db)
             
-            elif missing_on_fs: # is True
+            elif fs_entry is False or missing_on_fs is True:
                 # missing in DB, new in FS
                 db_entry = next(db)
-            else: # missing_on_fs is False
+            elif db_entry is False or missing_on_fs is False:
                 # missing in FS
                 fs_entry = next(fs)
-
+            else:
+                assert False # should not come here
+                
             if fs_entry is None:
                 # new directory
                 continue 
             
+            if fs_entry is False and db_entry is False:
+                raise StopIteration()
             
-            # returns None if could compare,
-            #      or db_fullpath > fs_fullpath
-            missing_on_fs, diff = compare_entries(fs_dir, fs_entry, db_entry, do_checksum)
+            if fs_entry is False: # no more fs entries
+                missing_on_fs = True # so db cannot be on fs
+                db_relpath, db_info = db_entry
+            elif db_entry is False: # no more db entries
+                missing_on_fs = False # so fs cannot be on db
+                fs_fullpath, fs_relpath, fs_info = fs_entry
+            else:
+                # returns None if could compare,
+                #      or db_fullpath > fs_fullpath
+                missing_on_fs, diff = compare_entries(fs_dir, fs_entry, db_entry, do_checksum)
             
-            fs_fullpath, fs_relpath, fs_info = fs_entry
-            db_relpath, db_info = db_entry
-
+                fs_fullpath, fs_relpath, fs_info = fs_entry
+                db_relpath, db_info = db_entry
+            
             common.progress(count, total_len)
             count += 1
             
@@ -162,6 +175,7 @@ def compare_fs_db(repo, fs_dir, do_checksum):
                     missing += 1
                 else:
                     # missing on the database
+                    log.info("missing: {} in {}".format(fs_relpath, repo.db_file))
                     assert os.system('/usr/bin/grep "{}" "{}" --quiet'.format(fs_relpath, repo.db_file)) != 0
                     
                     print(fs_relpath, file=new_f)
