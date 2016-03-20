@@ -15,3 +15,7 @@ GOOD_FILES = "good.txt"
 
 STATUS_FILES = MISSING_FILES, DIFFERENT_FILES, NEW_FILES, GOOD_FILES
 
+STATUS_FILES_DESC = ((GOOD_FILES, "Good files"),
+                    (MISSING_FILES, "Missing files"),
+                    (DIFFERENT_FILES, "Different files"),
+                    (NEW_FILES, "New files"))

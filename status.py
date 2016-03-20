@@ -1,4 +1,4 @@
-import os
+import os, time
 
 import common, config, verify
 
@@ -13,25 +13,76 @@ def do_status(args):
     if not repo:
         log.critical("Could not find a repository with {} in copies...".format(fs_dir))
         return
-
-    def do_clean():
-        for to_remove in config.STATUS_FILES:
-            try:
-                path = os.path.join(repo.tmp_dir, to_remove)
-                os.remove(path)
-            except OSError:
-                pass
-            
-    if args["clean"]:
-        do_clean()
-        log.info("Status of repository '{}' cleaned.".format(repo.name))
-    elif args["verify"]:
-        verify.verify_all(repo, fs_dir) 
-    else:
-        do_clean()
-
-        status(repo, fs_dir, do_checksum)
         
+    if args["show"]:
+        do_show(repo)
+        
+    elif args["clean"]:
+        if not do_clean(repo):
+            log.warn("No status file to clean for repository '{}'.".format(repo.name))
+        
+    elif args["verify"]:
+        verify.verify_all(repo, fs_dir)
+        
+    else:
+        if has_status(repo) and not args["--force"]:
+            do_show(repo)
+            log.info("(Run `status --force` to force rescan.)")
+        else:
+            do_clean(repo)
+            status(repo, fs_dir, do_checksum)
+
+def do_clean(repo):
+    cleaned = False
+    for to_remove in config.STATUS_FILES:
+        try:
+            path = os.path.join(repo.tmp_dir, to_remove)
+            os.remove(path)
+            cleaned = True
+        except OSError:
+            pass
+    if cleaned:
+        log.info("Status of repository '{}' cleaned.".format(repo.name))
+    return cleaned
+            
+def has_status(repo):
+    for fname in config.STATUS_FILES:
+        fpath = os.path.join(repo.tmp_dir, fname)
+        
+        if not os.path.exists(fpath):
+            return False
+    return True
+
+def do_show(repo):
+    min_ctime = None
+    for fname, desc in config.STATUS_FILES_DESC:
+        log.warn(desc)
+        
+        fpath = os.path.join(repo.tmp_dir, fname)
+        
+        fctime = os.path.getctime(fpath)
+        min_ctime = min(min_ctime, fctime) if min_ctime is not None else fctime
+        
+        if not os.path.exists(fpath):
+            log.warn("Doesn't exist.")
+            continue
+        
+        with open(fpath) as fname_f:
+            if fname is config.GOOD_FILES:
+                log.info("{} entries".format(len(fname_f.readlines())))
+            else:
+                has = False
+                for line in fname_f.readlines():
+                    log.info(line[:-1])
+                    has = True
+                    
+                if not has:
+                    log.info("None")
+    
+    if min_ctime is not None:
+        log.warn("  Status file created on: {}".format(time.ctime(min_ctime)))
+    log.info("Database file created on: {}".format(time.ctime(os.path.getctime(repo.db_file))))
+    
 def status(repo, fs_dir, do_checksum):
     log.info("Getting status of {} ({}) against repository '{}'.".format(repo.copyname, fs_dir, repo.name))
              
@@ -168,7 +219,7 @@ def compare_fs_db(repo, fs_dir, do_checksum):
                 # one of the files is missing
                 if missing_on_fs:
                     # missing on the filesystem
-                    
+                    log.critical("test {}/{}".format(fs_dir, db_relpath))
                     assert not os.path.exists("{}/{}".format(fs_dir, db_relpath))
 
                     print(db_relpath, file=missing_f)

@@ -12,7 +12,10 @@ def do_update(args):
     if not repo:
         log.critical("Could not find a repository with {} in copies...".format(fs_dir))
         return
-
+    if not repo.copyname == "master":
+        log.critical("Database can only be updated from master copy. Current directory is '{}' copy.".format(repo.copyname))
+        return
+    
     do_checksum = args["--checksum"]
     
     update_database(repo, fs_dir, do_checksum)
@@ -105,12 +108,13 @@ def update_database(repo, fs_dir, do_checksum):
 
         tmp_db_f.close()
         tmp_db_f = None # don't close it twice
-
         
         try: os.remove(repo.db_file)
         except OSError: pass
 
         os.rename(tmp_db_file, repo.db_file)
+
+        status.do_clean(repo)
         
     finally:
         if tmp_db_f:

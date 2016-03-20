@@ -6,10 +6,11 @@ Usage:
   backup.py init <name> [--force]
   backup.py init from <name> as <backup-name> [--force]
   backup.py update [--checksum]
-  backup.py status [--checksum]
-  backup.py status verify
-  backup.py status clean
-  backup.py treat new|missing|updated|all
+  backup.py status [--force] [--checksum]
+  backup.py status [show|verify|clean]
+  backup.py treat new [--delete]
+  backup.py treat (missing|updated|all)
+  backup.py config 
   backup.py debug info
   backup.py (-h | --help)
 
@@ -45,7 +46,7 @@ def init_logging():
 
 
 init_logging()
-log = logging.getLogger('root')
+log = logging.getLogger('backup.dispatch')
 
 import init, config, status, verify, info, update, treat
 
@@ -55,7 +56,6 @@ def main(args):
 
     try:            
         #################
-            
         if args["init"]:
             init.do_init(args)
             
@@ -67,6 +67,9 @@ def main(args):
 
         elif args["treat"]:
             treat.do_treat(args)
+            
+        elif args["config"]:
+            log.warn("cannot configure yet")
             
         elif args["debug"] and args["info"]:
             info.do_info(args)
@@ -81,6 +84,6 @@ def main(args):
         # print("  "+"\n  ".join("{:10s}->  {}".format(k, v) for k, v in args.items() if v))
         # print("---")
         # print("  "+"\n  ".join("{:10s}->  {}".format(k, v) for k, v in args.items() if not v))
-            
+
 if __name__ == '__main__':
     main(docopt(__doc__, version='backup.py 0.9'))
