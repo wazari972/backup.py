@@ -19,3 +19,5 @@ STATUS_FILES_DESC = ((GOOD_FILES, "Good files"),
                     (MISSING_FILES, "Missing files"),
                     (DIFFERENT_FILES, "Different files"),
                     (NEW_FILES, "New files"))
+
+NOP = False

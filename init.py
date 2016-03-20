@@ -64,6 +64,7 @@ def init_repository(name, force=False):
         except Exception as e:
             log.critical("Database generation failed: {}".format(e))
             os.remove(repo.db_file)
+            raise e
     else:
         log.critical("NOP: print_filesystem({}, {})".format(repo.fs_dir, repo.db_file))
         

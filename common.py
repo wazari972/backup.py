@@ -7,12 +7,16 @@ import config
 
 def print_filesystem(fs_dir, out_f=sys.stdout, do_checksum=True):
     for a_file in browse_filesystem(fs_dir, do_checksum):
+        if a_file is False:
+            # end of filesystem files
+            continue # or return, it's the same
         if a_file is None:
             if out_f == sys.stdout:
                 print("---")
             continue
         
         print_a_file(a_file, out_f)
+
 
 def print_a_file(a_file, out_f):
     relpath, info = a_file[-2:]

@@ -7,8 +7,6 @@ log = logging.getLogger('backup.treat')
 
 import common, status
 
-NOP = False
-
 def do_treat(args):
     fs_dir = os.path.abspath(".")
     
@@ -137,7 +135,7 @@ def treat_generic(origin, local, name, status_file, dirname,
 
             dst_dir = dst.rpartition("/")[0]
 
-            if NOP: return
+            if config.NOP: return
             try: os.mkdir(dst_dir)
             except FileExistsError: pass # ignore
         
@@ -149,7 +147,7 @@ def treat_generic(origin, local, name, status_file, dirname,
             src = "{}/{}".format(origin, status)
             src_dir = src.rpartition("/")[0]
 
-            if NOP: return
+            if config.NOP: return
             os.remove(src)
             
             try: os.rmdir(src_dir)

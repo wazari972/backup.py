@@ -54,7 +54,11 @@ def main(args):
     try: os.mkdir(config.CONFIG_PATH)
     except FileExistsError: pass # ignore
 
-    try:            
+    try:
+        if config.NOP:
+            log.critical("************************")
+            log.critical("*** NOP mode active. ***")
+            log.critical("************************")
         #################
         if args["init"]:
             init.do_init(args)
@@ -79,11 +83,14 @@ def main(args):
         log.critical(e)
         traceback.print_exc()
     finally:
-        pass
+        
         # print("---")
         # print("  "+"\n  ".join("{:10s}->  {}".format(k, v) for k, v in args.items() if v))
         # print("---")
         # print("  "+"\n  ".join("{:10s}->  {}".format(k, v) for k, v in args.items() if not v))
-
+        if config.NOP:
+            log.critical("************************")
+            log.critical("*** NOP mode active. ***")
+            log.critical("************************")
 if __name__ == '__main__':
     main(docopt(__doc__, version='backup.py 0.9'))
