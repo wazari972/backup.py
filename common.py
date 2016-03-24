@@ -94,6 +94,7 @@ class Repository():
         self.MISSING_FILES = None
         self.DIFFERENT_FILES = None
         self.GOOD_FILES = None
+        self.MOVED_FILES = None
         
     def set_copyname(self, copyname):
         self.copyname = copyname
@@ -103,6 +104,7 @@ class Repository():
         self.MISSING_FILES = os.path.join(self.tmp_dir, config.MISSING_FILES)
         self.DIFFERENT_FILES = os.path.join(self.tmp_dir, config.DIFFERENT_FILES)
         self.GOOD_FILES = os.path.join(self.tmp_dir, (config.GOOD_FILES))
+        self.MOVED_FILES = os.path.join(self.tmp_dir, (config.MOVED_FILES))
                                        
     def get_copies(self, allow_new=False):
         try:

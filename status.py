@@ -1,7 +1,7 @@
 import os, time
 
 import common, config, verify
-
+from enum import Enum
 import logging; log = logging.getLogger('backup.status')
 
 def do_status(args):    
@@ -94,27 +94,30 @@ def is_missing_in_fs(fs_fullpath, db_fullpath):
     db_dir, _, db_name = db_fullpath.rpartition("/")
     fs_dir, _, fs_name = fs_fullpath.rpartition("/")
     
-    if fs_dir != db_dir:
-        # not in the same directory
-        return db_dir < fs_dir
+    missing_in_fs = (
+        # not in the same directory ?
+        db_dir < fs_dir if fs_dir != db_dir 
+        else db_name < fs_name)
+
+    return (FileState.MISSING_IN_FS if missing_in_fs
+            else FileState.MISSING_ON_DB)
     
-    return db_name < fs_name
 
 def compare_entries(fs_dir, fs_entry, db_entry, do_checksum):    
     fs_fullpath, fs_relpath, fs_info = fs_entry
     db_relpath, db_info = db_entry
 
     db_fullpath = "{}/{}".format(fs_dir, db_relpath)
-
+    
     if fs_fullpath != db_fullpath:
-        missing_on_fs = is_missing_in_fs(fs_fullpath, db_fullpath)
+        state = is_missing_in_fs(fs_fullpath, db_fullpath)
         
-        if missing_on_fs:
+        if state is FileState.MISSING_IN_FS:
             log.warn("{} # missing in fs".format(db_relpath, fs_relpath))
         else:
             log.warn("{} # missing in db".format(fs_relpath, db_relpath))
-        
-        return missing_on_fs, None
+
+        return state, None
 
     errors = {}
     
@@ -131,10 +134,19 @@ def compare_entries(fs_dir, fs_entry, db_entry, do_checksum):
     
         errors[key] = (db_val, fs_val)
 
-    if errors:
-        log.warning("{} # different {}".format(db_relpath, ", ".join(errors.keys())))
+    state = FileState.DIFFERENT if errors else FileState.OK
     
-    return None, errors
+    if state is FileState.DIFFERENT:
+        log.warning("{} # different {}".format(db_relpath, ", ".join(errors.keys())))
+        
+    return state, errors
+
+class FileState(Enum):
+    (OK,
+     DIFFERENT,
+     MISSING_ON_DB,
+     MISSING_IN_FS,
+     MOVED) = range(5)
 
 def progress_on_fs_and_db(repo, fs_dir, do_checksum):
     total_len = common.db_length(repo.db_file)
@@ -142,22 +154,20 @@ def progress_on_fs_and_db(repo, fs_dir, do_checksum):
     count = 0
     db = common.browse_db(repo.db_file)
     fs = common.browse_filesystem(fs_dir, do_checksum)
-    missing_on_fs = None
+    state = FileState.OK
 
     while True:
-        if missing_on_fs is None:
+        if state in (FileState.OK, FileState.DIFFERENT):
             fs_entry = next(fs)
                 
             if fs_entry is not None:
                 # not a new directory
                 db_entry = next(db)
-            
-        elif fs_entry is False or missing_on_fs is True:
-            # missing in DB, new in FS
+
+        elif fs_entry is False or state is FileState.MISSING_IN_FS:
             db_entry = next(db)
             
-        elif db_entry is False or missing_on_fs is False:
-            # missing in FS
+        elif db_entry is False or state is FileState.MISSING_ON_DB:
             fs_entry = next(fs)
             
         else:
@@ -174,20 +184,20 @@ def progress_on_fs_and_db(repo, fs_dir, do_checksum):
             raise StopIteration()
 
         if fs_entry is False: # no more fs entries
-            missing_on_fs = True # so db cannot be on fs
+            state = FileState.MISSING_IN_FS # so file cannot be on fs
             
         elif db_entry is False: # no more db entries
-            missing_on_fs = False # so fs cannot be on db
+            state = FileState.MISSING_ON_DB # so file cannot be on db
             
         else:
             # returns None if could compare,
             #      or db_fullpath > fs_fullpath
-            missing_on_fs, diff = compare_entries(fs_dir, fs_entry, db_entry, do_checksum)
+            state, diff = compare_entries(fs_dir, fs_entry, db_entry, do_checksum)
 
         common.progress(count, total_len)
         count += 1
 
-        yield missing_on_fs, diff, db_entry, fs_entry
+        yield state, diff, db_entry, fs_entry
         
 def compare_fs_db(repo, fs_dir, do_checksum):
     if not os.path.exists(fs_dir):
@@ -205,59 +215,61 @@ def compare_fs_db(repo, fs_dir, do_checksum):
         missing_f = open(repo.MISSING_FILES, "w+")
         different_f = open(repo.DIFFERENT_FILES, "w+")
         good_f = open(repo.GOOD_FILES, "w+")
-
-        good, different, missing, new = 0, 0, 0, 0
+        moved_f = open(repo.MOVED_FILES, "w+")
+        
+        moved, good, different, missing, new = 0, 0, 0, 0, 0
         
         while True:
-            missing_on_fs, diff, db_entry, fs_entry = next(progress)
+            state, diff, db_entry, fs_entry = next(progress)
 
-            try:
-                fs_fullpath, fs_relpath, fs_info = fs_entry
-                db_relpath, db_info = db_entry
-            except:
-                import pdb;pdb.set_trace()
-            if missing_on_fs is None:
-                if not diff:
-                    # files are identical
-                    print(db_relpath, file=good_f)
-                    good += 1
-                else:
-                    # there are some differences, in diff dict
-                    print("{} # {}".format(db_relpath, ", ".join(diff.keys())),
-                          file=different_f)
-                    different += 1
+            fs_fullpath, fs_relpath, fs_info = fs_entry
+            db_relpath, db_info = db_entry
+    
+            if state is FileState.OK:
+                print(db_relpath, file=good_f)
+                good += 1
+                
+            elif state is FileState.DIFFERENT:
+                assert diff
+
+                print("{} # {}".format(db_relpath, ", ".join(diff.keys())),
+                      file=different_f)
+                different += 1
+                
+            elif state is FileState.MISSING_IN_FS:
+                assert not os.path.exists("{}/{}".format(fs_dir, db_relpath))
+                
+                print(db_relpath, file=missing_f)
+                missing += 1
+                
+            elif state is FileState.MISSING_ON_DB:
+                command = '/usr/bin/grep "{}" "{}" --quiet'.format(fs_relpath, repo.db_file)
+                
+                assert os.system(command) # assert !0 (text not found)
+
+                print(fs_relpath, file=new_f)
+                new += 1
+                
+            elif state is FileState.MOVED:
+                assert False
+                moved += 1
             else:
-                # one of the files is missing
-                if missing_on_fs:
-                    # missing on the filesystem
-                    assert not os.path.exists("{}/{}".format(fs_dir, db_relpath))
-
-                    print(db_relpath, file=missing_f)
-                    missing += 1
-                else:
-                    # missing on the database
-                    #log.info("missing: {} in {}".format(fs_relpath, repo.db_file))
-                    command = '/usr/bin/grep "{}" "{}" --quiet'
-                    assert os.system(command.format(fs_relpath, repo.db_file)) != 0
-                    
-                    print(fs_relpath, file=new_f)
-                    new += 1
+                log.critical("Incorrect state: {}".format(state))
+                assert False # should not come here
                 
     except StopIteration:
-        count = sum([good, different, missing, new])
+        count = sum([good, different, missing, new, moved])
         
         log.warn("Done, {} files compared.".format(count))
         log.info("Good files: {}".format(good))
         log.info("Missing files: {}".format(missing))
         log.info("Different files: {}".format(different))
         log.info("New files: {}".format(new))
+        log.info("Moved files: {}".format(moved))
         
     finally:
-        if missing_f:
-            missing_f.close()
-        if different_f:
-            different_f.close()
-        if new_f:
-            new_f.close()
-
-
+        for a_file in (missing_f, missing_f, different_f, new_f, good_f):
+            try:
+                a_file.close()
+            except NameError: # variable doesn't exist
+                pass

@@ -22,7 +22,7 @@ def do_update(args):
     update_database(repo, fs_dir, do_checksum)
     
 def update_database(repo, fs_dir, do_checksum):
-    updated, new, missing, untouched = 0, 0, 0, 0
+    updated, new, missing, untouched, moved = 0, 0, 0, 0, 0
 
     tmp_db_file = "{}.tmp".format(repo.db_file)
 
@@ -32,37 +32,39 @@ def update_database(repo, fs_dir, do_checksum):
         tmp_db_f = open(tmp_db_file, "w+")
 
         while True:
-            missing_on_fs, diff, db_entry, fs_entry = next(progress)
+            state, diff, db_entry, fs_entry = next(progress)
             
             fs_fullpath, fs_relpath, fs_info = fs_entry
             db_relpath, db_info = db_entry
             
             entry_to_save = fs_entry
             
-            if missing_on_fs is None:
-                if not diff:
-                    # files are identical
-                    untouched += 1
-                    entry_to_save = db_entry
-                else:
-                    # there are some differences, in diff dict
-                    updated += 1
-                    if not do_checksum:
-                        # force compute the checksum if disabled
-                        fs_info["md5sum"] = common.checksum(fs_fullpath)
-            else:
-                # the file is missing
-                if missing_on_fs:
-                    # on the database
-                    new += 1
-                    continue # skip this entry
-                else:
-                    # on the filesystem
-                    missing += 1
-                    if not do_checksum:
-                        # force compute the checksum if disabled
-                        fs_info["md5sum"] = common.checksum(fs_fullpath)
+            if state is status.FileState.OK:
+                untouched += 1
+                entry_to_save = db_entry
+                
+            elif state is status.FileState.DIFFERENT:
+                assert diff
+                updated += 1
+                if not do_checksum:
+                    # force compute the checksum if disabled
+                    fs_info["md5sum"] = common.checksum(fs_fullpath)
+                    
+            elif state is status.FileState.MISSING_IN_FS:
+                new += 1
+                continue # skip this entry
             
+            elif state is status.FileState.MISSING_ON_DB:
+                missing += 1
+                if not do_checksum:
+                    # force compute the checksum if disabled
+                    fs_info["md5sum"] = common.checksum(fs_fullpath)
+                    
+            elif state is status.FileState.MOVED:
+                assert False
+            else:
+                assert False # should not come here
+                
             common.print_a_file(entry_to_save, tmp_db_f)
             
     except StopIteration:
@@ -73,7 +75,8 @@ def update_database(repo, fs_dir, do_checksum):
         log.error("{} entries added".format(missing))
         log.error("{} entries updated".format(updated))
         log.error("{} entries removed".format(new))
-
+        log.error("{} entries moved".format(moved))
+        
         tmp_db_f.close()
         tmp_db_f = None # don't close it twice
         
