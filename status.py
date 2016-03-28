@@ -3,6 +3,7 @@ import os, time
 import common, config, verify
 from enum import Enum
 import logging; log = logging.getLogger('backup.status')
+from collections import OrderedDict
 
 def do_status(args):    
     fs_dir = os.path.abspath(".")
@@ -55,10 +56,10 @@ def has_status(repo):
 
 def do_show(repo):
     min_ctime = None
-    for fname, desc in config.STATUS_FILES_DESC:
+    for fname, desc in config.STATUS_FILES_DESC.items():
         log.warn(desc)
         
-        fpath = os.path.join(repo.tmp_dir, fname)
+        fpath = repo.get_status_fname(fname)
         
         fctime = os.path.getctime(fpath)
         min_ctime = min(min_ctime, fctime) if min_ctime is not None else fctime
@@ -86,7 +87,7 @@ def do_show(repo):
 def status(repo, fs_dir, do_checksum):
     log.info("Getting status of {} ({}) against repository '{}'.".format(repo.copyname, fs_dir, repo.name))
              
-    compare_fs_db(repo, fs_dir, do_checksum)
+    compare_and_save_fs_db(repo, fs_dir, do_checksum)
 
 def is_missing_in_fs(fs_fullpath, db_fullpath):
     # files are first
@@ -147,7 +148,7 @@ class FileState(Enum):
      MISSING_ON_DB,
      MISSING_IN_FS,
      MOVED) = range(5)
-
+    
 def progress_on_fs_and_db(repo, fs_dir, do_checksum):
     total_len = common.db_length(repo.db_file)
 
@@ -182,7 +183,7 @@ def progress_on_fs_and_db(repo, fs_dir, do_checksum):
             print("")
             
             raise StopIteration()
-
+        
         if fs_entry is False: # no more fs entries
             state = FileState.MISSING_IN_FS # so file cannot be on fs
             
@@ -196,10 +197,65 @@ def progress_on_fs_and_db(repo, fs_dir, do_checksum):
 
         common.progress(count, total_len)
         count += 1
-
-        yield state, diff, db_entry, fs_entry
         
-def compare_fs_db(repo, fs_dir, do_checksum):
+        yield state, diff, db_entry, fs_entry
+
+def compare_fs_db(repo, fs_dir, do_checksum, updating=False):
+    progress = progress_on_fs_and_db(repo, fs_dir, do_checksum)
+
+    good, missing, new, different, moved = [], [], [], [], []
+    
+    try:
+        while True:
+            state, diff, db_entry, fs_entry = next(progress)
+
+            try:
+                fs_fullpath, fs_relpath, fs_info = fs_entry
+            except Exception: pass
+            
+            try:
+                db_relpath, db_info = db_entry
+            except Exception: pass
+            
+            if state is FileState.OK:
+                good.append((db_relpath, db_info))
+                
+            elif state is FileState.DIFFERENT:
+                assert diff
+
+                different.append((db_relpath, diff))
+                
+            elif state is FileState.MISSING_IN_FS:
+                if not updating:
+                    assert not os.path.exists("{}/{}".format(fs_dir, db_relpath))
+                
+                missing.append((db_relpath, db_info))
+                
+            elif state is FileState.MISSING_ON_DB:
+                if not updating:
+                    command = '/usr/bin/grep "{}" "{}" --quiet'.format(fs_relpath, repo.db_file)
+                    assert os.system(command) # assert !0 (text not found)
+                
+                new.append((fs_relpath, fs_info))
+                
+            else: # MOVED should not happend here
+                log.critical("Incorrect state: {}".format(state))
+                assert False # should not come here
+                
+    except StopIteration:
+        pass
+
+    log.critical("Compute moved files here")
+
+    return OrderedDict((
+            (config.GOOD_FILES, good),
+            (config.NEW_FILES, new),
+            (config.MISSING_FILES, missing),
+            (config.DIFFERENT_FILES, different),
+            (config.MOVED_FILES, moved),
+            ))
+    
+def compare_and_save_fs_db(repo, fs_dir, do_checksum):
     if not os.path.exists(fs_dir):
         log.critical("Path '{}' does not exist.".format(fs_dir))
         return
@@ -207,69 +263,25 @@ def compare_fs_db(repo, fs_dir, do_checksum):
     if not common.db_length(repo.db_file):
         log.critical("Database is empty.")
         return
-
-    progress = progress_on_fs_and_db(repo, fs_dir, do_checksum)
     
-    try:
-        new_f = open(repo.NEW_FILES, "w+")
-        missing_f = open(repo.MISSING_FILES, "w+")
-        different_f = open(repo.DIFFERENT_FILES, "w+")
-        good_f = open(repo.GOOD_FILES, "w+")
-        moved_f = open(repo.MOVED_FILES, "w+")
-        
-        moved, good, different, missing, new = 0, 0, 0, 0, 0
-        
-        while True:
-            state, diff, db_entry, fs_entry = next(progress)
+    status_files = {fname: open(repo.get_status_fname(fname), "w+")
+                    for fname, descr in config.STATUS_FILES_DESC.items()}
 
-            fs_fullpath, fs_relpath, fs_info = fs_entry
-            db_relpath, db_info = db_entry
-    
-            if state is FileState.OK:
-                print(db_relpath, file=good_f)
-                good += 1
-                
-            elif state is FileState.DIFFERENT:
-                assert diff
-
-                print("{} # {}".format(db_relpath, ", ".join(diff.keys())),
-                      file=different_f)
-                different += 1
-                
-            elif state is FileState.MISSING_IN_FS:
-                assert not os.path.exists("{}/{}".format(fs_dir, db_relpath))
-                
-                print(db_relpath, file=missing_f)
-                missing += 1
-                
-            elif state is FileState.MISSING_ON_DB:
-                command = '/usr/bin/grep "{}" "{}" --quiet'.format(fs_relpath, repo.db_file)
-                
-                assert os.system(command) # assert !0 (text not found)
-
-                print(fs_relpath, file=new_f)
-                new += 1
-                
-            elif state is FileState.MOVED:
-                assert False
-                moved += 1
-            else:
-                log.critical("Incorrect state: {}".format(state))
-                assert False # should not come here
-                
-    except StopIteration:
-        count = sum([good, different, missing, new, moved])
+    lists_of_files = compare_fs_db(repo, fs_dir, do_checksum)
         
-        log.warn("Done, {} files compared.".format(count))
-        log.info("Good files: {}".format(good))
-        log.info("Missing files: {}".format(missing))
-        log.info("Different files: {}".format(different))
-        log.info("New files: {}".format(new))
-        log.info("Moved files: {}".format(moved))
-        
-    finally:
-        for a_file in (missing_f, missing_f, different_f, new_f, good_f):
+    log.warn("Done, {} files compared.".format(sum(map(len, lists_of_files.values()))))
+
+    for fname, flist in lists_of_files.items():
+        log.info("{}: {}".format(config.STATUS_FILES_DESC[fname], len(flist)))
+        status_f = status_files[fname]
+
+        for entry in flist:
             try:
-                a_file.close()
-            except NameError: # variable doesn't exist
-                pass
+                relpath, info = entry
+            except ValueError: # new has no info
+                relpath, info = entry, {}
+            
+            common.print_a_file(relpath, info, status_f)
+        
+    for status_file in status_files.values():
+        status_file.close()

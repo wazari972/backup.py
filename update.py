@@ -1,6 +1,6 @@
 import os
 
-import common, status
+import common, status, config
 
 import logging; log = logging.getLogger('backup.update')
 
@@ -22,71 +22,50 @@ def do_update(args):
     update_database(repo, fs_dir, do_checksum)
     
 def update_database(repo, fs_dir, do_checksum):
-    updated, new, missing, untouched, moved = 0, 0, 0, 0, 0
+    lists_of_files = status.compare_fs_db(repo, fs_dir, do_checksum, updating=True)
+    
+    new = lists_of_files[config.NEW_FILES]
+    missing = lists_of_files[config.MISSING_FILES]
+    good = lists_of_files[config.GOOD_FILES]
+    different = lists_of_files[config.DIFFERENT_FILES]
+    moved = lists_of_files[config.MOVED_FILES]
 
+    # only skip MISSING
+    to_save = list(good)
+    to_update = list(different)
+
+    if not do_checksum:
+        # force checksum for database entry
+        to_update += new
+    else:
+        to_save += new
+
+    log.critical("treat MOVED list here")
+    
+    for fname, old_info in to_update:
+        fs_fullpath = os.path.join(fs_dir, fname)
+        info = common.get_file_info(fs_fullpath, do_checksum=True)
+
+        to_save.append((fname, info))
+                       
     tmp_db_file = "{}.tmp".format(repo.db_file)
 
-    progress = status.progress_on_fs_and_db(repo, fs_dir, do_checksum)
+    to_save = sorted(to_save, key=lambda entry: entry[0])
     
-    try:
-        tmp_db_f = open(tmp_db_file, "w+")
+    with open(tmp_db_file, "w+") as tmp_db_f:
+        for fname, info in to_save:
+            common.print_a_file(fname, info, tmp_db_f)
 
-        while True:
-            state, diff, db_entry, fs_entry = next(progress)
-            
-            fs_fullpath, fs_relpath, fs_info = fs_entry
-            db_relpath, db_info = db_entry
-            
-            entry_to_save = fs_entry
-            
-            if state is status.FileState.OK:
-                untouched += 1
-                entry_to_save = db_entry
-                
-            elif state is status.FileState.DIFFERENT:
-                assert diff
-                updated += 1
-                if not do_checksum:
-                    # force compute the checksum if disabled
-                    fs_info["md5sum"] = common.checksum(fs_fullpath)
-                    
-            elif state is status.FileState.MISSING_IN_FS:
-                new += 1
-                continue # skip this entry
-            
-            elif state is status.FileState.MISSING_ON_DB:
-                missing += 1
-                if not do_checksum:
-                    # force compute the checksum if disabled
-                    fs_info["md5sum"] = common.checksum(fs_fullpath)
-                    
-            elif state is status.FileState.MOVED:
-                assert False
-            else:
-                assert False # should not come here
-                
-            common.print_a_file(entry_to_save, tmp_db_f)
-            
-    except StopIteration:
-        print("")
+    try: os.remove(repo.db_file)
+    except OSError: pass
 
-        log.critical("Database updated.")
-        log.error("{} entries untouched".format(untouched))
-        log.error("{} entries added".format(missing))
-        log.error("{} entries updated".format(updated))
-        log.error("{} entries removed".format(new))
-        log.error("{} entries moved".format(moved))
-        
-        tmp_db_f.close()
-        tmp_db_f = None # don't close it twice
-        
-        try: os.remove(repo.db_file)
-        except OSError: pass
+    os.rename(tmp_db_file, repo.db_file)
+            
+    log.warn("Database updated.")
+    log.info("{} entries untouched".format(len(good)))
+    log.info("{} entries added".format(len(missing)))
+    log.info("{} entries updated".format(len(different)))
+    log.info("{} entries removed".format(len(new)))
+    log.info("{} entries moved".format(len(moved)))
 
-        os.rename(tmp_db_file, repo.db_file)
-
-        status.do_clean(repo)
-        
-    finally:
-        if tmp_db_f:
-            tmp_db_f.close()
+    status.do_clean(repo)

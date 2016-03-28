@@ -2,7 +2,7 @@ import sys, os, yaml
 import hashlib
 
 import logging; log = logging.getLogger('common')
-
+from collections import OrderedDict
 import config
 
 def print_filesystem(fs_dir, out_f=sys.stdout, do_checksum=True):
@@ -17,12 +17,14 @@ def print_filesystem(fs_dir, out_f=sys.stdout, do_checksum=True):
         
         print_a_file(a_file, out_f)
 
-
-def print_a_file(a_file, out_f):
-    relpath, info = a_file[-2:]
-    print("{} -> {}".format(relpath,
-                            ", ".join([ "{}: {}".format(k, v) for k,v in info.items()])),
-          file=out_f)
+        
+def print_a_file(relpath, info, out_f):
+    info_str = ", ".join([ "{}: {}".format(k, v) for k,v in info.items()])
+    print("{} -> {}".format(relpath, info_str), file=out_f)
+    
+def get_file_info(fullpath, do_checksum):
+    return OrderedDict((("md5sum", checksum(fullpath) if do_checksum else ""),
+                       ("size", str(os.stat(fullpath).st_size))))
 
 def browse_filesystem(fs_dir, do_checksum):
     for dirpath, dirnames, files in os.walk(fs_dir):
@@ -36,20 +38,14 @@ def browse_filesystem(fs_dir, do_checksum):
 
         for name in sorted(files):
             fullpath = os.path.join(dirpath, name)
-
+            
             relpath = fullpath[len(fs_dir)+1:]
 
-            st = os.stat(fullpath)
+            yield fullpath, relpath, get_file_info(fullpath, do_checksum)
             
-            info = {
-                "md5sum" : checksum(fullpath) if do_checksum else "",
-                "size" : str(st.st_size)
-                }
-
-            yield fullpath, relpath, info
-            
-        yield None
-    yield False
+        yield None # end if dir
+        
+    yield False # end of FS
 
 def db_length(db_fname):
     with open(db_fname) as db_f:
@@ -60,7 +56,7 @@ def browse_db(db_fname):
         for line in db_f.readlines():
             relpath, _, info_txt = line[:-1].partition(" -> ")
             info_lst = info_txt.split(", ")
-            info = {item.split(": ")[0]: item.split(": ")[1] for item in info_lst}
+            info = OrderedDict((item.split(": ")[0], item.split(": ")[1]) for item in info_lst)
 
             yield relpath, info
     yield False
@@ -100,12 +96,17 @@ class Repository():
         self.copyname = copyname
         self.tmp_dir = os.path.join(self.cfg_dir, copyname)
 
-        self.NEW_FILES = os.path.join(self.tmp_dir, config.NEW_FILES)
-        self.MISSING_FILES = os.path.join(self.tmp_dir, config.MISSING_FILES)
-        self.DIFFERENT_FILES = os.path.join(self.tmp_dir, config.DIFFERENT_FILES)
-        self.GOOD_FILES = os.path.join(self.tmp_dir, (config.GOOD_FILES))
-        self.MOVED_FILES = os.path.join(self.tmp_dir, (config.MOVED_FILES))
-                                       
+        self.NEW_FILES       = self.get_status_fname(config.NEW_FILES)
+        self.MISSING_FILES   = self.get_status_fname(config.MISSING_FILES)
+        self.DIFFERENT_FILES = self.get_status_fname(config.DIFFERENT_FILES)
+        self.GOOD_FILES      = self.get_status_fname(config.GOOD_FILES)
+        self.MOVED_FILES     = self.get_status_fname(config.MOVED_FILES)
+
+    def get_status_fname(self, fname):
+        assert fname in config.STATUS_FILES_DESC
+        
+        return os.path.join(self.tmp_dir, fname)
+    
     def get_copies(self, allow_new=False):
         try:
             with open(self.copies_file) as copies_f:

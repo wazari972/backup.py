@@ -31,7 +31,7 @@ def verify_new(repo, origin):
     correct = True
     with open(repo.NEW_FILES) as new_f:
         for line in new_f.readlines():
-            fname = line[:-1]
+            fname = line.partition(" -> ")[0]
 
             if in_database(fname):
                 log.warn("NEW: {} found in database".format(fname))
@@ -47,7 +47,7 @@ def verify_missing(repo, origin):
     correct = True
     with open(repo.MISSING_FILES) as missing_f:
         for line in missing_f.readlines():
-            fname = line[:-1]
+            fname = line.partition(" -> ")[0]
 
             if not in_database(fname):
                 log.warn("MISSING: {} not in database".format(fname))
@@ -62,16 +62,19 @@ def verify_different_good(repo, origin, do_good=False):
     correct = True
     
     def verif(what, line):
+        global correct
+        
         if not in_database(fname):
             log.warn("{}: {} not in database".format(what, fname))
             correct = False
         if not in_filesystem(origin, fname):
             log.warn("{}: {} not in filesystem".format(what, fname))
             correct = False
+            
     
     with open(repo.DIFFERENT_FILES) as different_f:
         for line in different_f.readlines():
-            fname = line.rpartition(" # ")[0]
+            fname = line.partition(" -> ")[0]
             verif("DIFF", line)
             
     if not do_good:
@@ -79,12 +82,16 @@ def verify_different_good(repo, origin, do_good=False):
 
     with open(repo.GOOD_FILES) as good_f:
         for line in good_f.readlines():
-            fname = line[:-1]
+            fname = line.partition(" -> ")[0]
 
             verif("GOOD", line)
             
     return correct
 
+def verify_moved(repo, origin):
+    log.critical("Moved files:                 Not implemented")
+    return False
+    
 def verify_all(repo, fs_dir):
     log.warn("Verify  {} against {}".format(fs_dir, repo.db_file))
               
@@ -101,7 +108,13 @@ def verify_all(repo, fs_dir):
             log.info("Missing files:               Everythin OK :)")
     except Exception as e:
         log.error("Could not verify missing files: {}".format(e))
-
+        
+    try:
+        if verify_moved(repo, fs_dir):
+            log.info("Moved files:                 Everythin OK :)")
+    except Exception as e:
+        log.error("Could not verify moved files: {}".format(e))
+        
     try:
         if verify_different_good(repo, fs_dir, do_good=True):
             log.info("Different and good files:    Everythin OK :)")

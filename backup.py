@@ -20,7 +20,7 @@ Options:
 
 from docopt import docopt
 
-import os, sys
+import os, sys, traceback
 import logging as log
 
 from enum import Enum
@@ -80,8 +80,18 @@ def main(args):
         else:
             print(__doc__)
     except Exception as e:
-        log.critical(e)
-        traceback.print_exc()
+        PRINT_EXCEPTION = True
+        START_PDB = True
+        
+        if START_PDB:
+            type, value, tb = sys.exc_info()
+            traceback.print_exc()
+            import pdb; pdb.post_mortem(tb)
+        elif PRINT_EXCEPTION:
+            traceback.print_exc()
+        else:
+            log.critical("Critical failure, bye ...")
+            log.critical(e)
     finally:
         
         # print("---")
@@ -92,5 +102,7 @@ def main(args):
             log.critical("************************")
             log.critical("*** NOP mode active. ***")
             log.critical("************************")
+            
 if __name__ == '__main__':
     main(docopt(__doc__, version='backup.py 0.9'))
+        
