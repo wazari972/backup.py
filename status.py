@@ -245,8 +245,31 @@ def compare_fs_db(repo, fs_dir, do_checksum, updating=False):
     except StopIteration:
         pass
 
-    log.critical("Compute moved files here")
+    # compute moved files
+    for new_file_info in list(new):
+        new_file, new_info = new_file_info
+        
+        if not do_checksum: # if checksum not computed before
+            fs_fullpath = os.path.join(fs_dir, new_file)
+            new_info = common.get_file_info(fs_fullpath, do_checksum=True)
 
+        missing_file_info = [(i, missing_file_info[0]) for i, missing_file_info in enumerate(missing)
+                      if missing_file_info[1]["md5sum"] == new_info["md5sum"]]
+
+        if not missing_file_info:
+            continue
+
+        assert len(missing_file_info) == 1
+        idx, missing_file = missing_file_info[0]
+
+        info = new_info.copy()
+        info["moved_from"] = missing_file
+        moved.append((new_file, info))
+        log.warning("{} # actually moved from {}".format(new_file, missing_file))
+
+        missing.pop(idx)
+        new.remove(new_file_info)
+        
     return OrderedDict((
             (config.GOOD_FILES, good),
             (config.NEW_FILES, new),
@@ -276,10 +299,8 @@ def compare_and_save_fs_db(repo, fs_dir, do_checksum):
         status_f = status_files[fname]
 
         for entry in flist:
-            try:
-                relpath, info = entry
-            except ValueError: # new has no info
-                relpath, info = entry, {}
+            relpath, info = entry
+                
             
             common.print_a_file(relpath, info, status_f)
         

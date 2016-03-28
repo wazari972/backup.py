@@ -39,8 +39,6 @@ def update_database(repo, fs_dir, do_checksum):
         to_update += new
     else:
         to_save += new
-
-    log.critical("treat MOVED list here")
     
     for fname, old_info in to_update:
         fs_fullpath = os.path.join(fs_dir, fname)
@@ -48,10 +46,14 @@ def update_database(repo, fs_dir, do_checksum):
 
         to_save.append((fname, info))
                        
-    tmp_db_file = "{}.tmp".format(repo.db_file)
+    for fname, info in moved:
+        del info["moved_from"]
+        to_save.append((fname, info))
 
+    # sort to match DB order
     to_save = sorted(to_save, key=lambda entry: entry[0])
     
+    tmp_db_file = "{}.tmp".format(repo.db_file)    
     with open(tmp_db_file, "w+") as tmp_db_f:
         for fname, info in to_save:
             common.print_a_file(fname, info, tmp_db_f)

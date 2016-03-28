@@ -89,8 +89,26 @@ def verify_different_good(repo, origin, do_good=False):
     return correct
 
 def verify_moved(repo, origin):
-    log.critical("Moved files:                 Not implemented")
-    return False
+    prepare_database(repo)
+    
+    correct = True
+    
+    with open(repo.MOVED_FILES) as good_f:
+        for line in good_f.readlines():
+            fname, _, info = line[:-1].partition(" -> ")
+
+            info = {item.split(": ")[0]:item.split(": ")[1] for item in info.split(", ")}
+
+            if not in_filesystem(origin, fname):
+                log.warn("MOVED: {} not in filesystem".format(fname))
+                correct = False
+
+            moved_from = info["moved_from"]
+            if not in_database(moved_from):
+                log.warn("MOVED: moved_from={} not in database".format(moved_from))
+                correct = False
+    
+    return correct
     
 def verify_all(repo, fs_dir):
     log.warn("Verify  {} against {}".format(fs_dir, repo.db_file))

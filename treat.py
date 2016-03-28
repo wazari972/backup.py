@@ -28,6 +28,9 @@ def do_treat(args):
     if args["updated"] or args["all"]:
         treat_updated(repo, fs_dir)
 
+    if args["moved"] or args["all"]:
+        treat_moved(repo, fs_dir)
+        
     log.warn("Don't forget to run `status --force` to refresh status files.")
     
 def treat_new(repo, fs_dir, delete_on_missing=False):
@@ -36,9 +39,13 @@ def treat_new(repo, fs_dir, delete_on_missing=False):
                   delete_on_missing)
 
 def treat_updated(repo, fs_dir):
-        treat_generic(repo.get_copies()["master"], fs_dir,
-                      "Different files", repo.DIFFERENT_FILES, "different_files",
-                      do_difference=True)
+    treat_generic(repo.get_copies()["master"], fs_dir,
+                  "Different files", repo.DIFFERENT_FILES, "different_files",
+                  do_difference=True)
+
+def treat_moved(repo, fs_dir):
+    log.critical("Cannot treat moved yet")
+    return
 
 def treat_missing(repo, fs_dir):
     if repo.get_copies()["master"] == fs_dir:

@@ -9,7 +9,7 @@ Usage:
   backup.py status [--force] [--checksum]
   backup.py status [show|verify|clean]
   backup.py treat new [--delete]
-  backup.py treat (missing|updated|all)
+  backup.py treat (missing|updated|moved|all)
   backup.py config 
   backup.py debug info
   backup.py (-h | --help)
