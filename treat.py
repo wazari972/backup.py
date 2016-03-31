@@ -55,6 +55,8 @@ def treat_missing(repo, fs_dir):
 def treat_generic(repo, fs_dir, status_file, delete_on_missing=False):
     origin = repo.get_copies()["master"]
     do_difference = status_file == config.DIFFERENT_FILES
+    do_move = status_file == config.MOVED_FILES
+    
     status_descr = config.STATUS_FILES_DESC[status_file]
     
     status_filename = repo.get_status_fname(status_file)
@@ -64,7 +66,9 @@ def treat_generic(repo, fs_dir, status_file, delete_on_missing=False):
             fname, _, info_str = line[:-1].partition(" -> ")
             
             status_files[fname] = OrderedDict(item.split(": ") for item in info_str.split(", "))
-    
+            
+            assert do_move and "moved_from" in status_files[fname]
+                
     tmpdir = tempfile.mkdtemp()
     
     status_dir = os.path.join(tmpdir, status_descr.lower().replace(" ", "_"))
@@ -82,14 +86,18 @@ def treat_generic(repo, fs_dir, status_file, delete_on_missing=False):
         def symlink(from_path):
             src = os.path.join(from_path, status)
 
-            filename = status.replace(os.path.sep, "_")
+            #filename = status.replace(os.path.sep, "_")
+            
             if do_difference:
-                filename = get_filename_for_diff(filename, from_path)
+                filename = get_filename_for_diff(status, from_path)
+            elif do_move:
+                filename = "{} from {}".format(status, status_files[status]["moved_from"])
+            else:
+                filename = status
+                
             
             log.info("{} in <{}> {}".format(status_descr, repo.copyname, status))
             os.symlink(src, os.path.join(status_dir, filename))
-
-        correct = True
         
         def is_consistent(local_should_exist, origin_should_exist, filename=status):
             def _is_consistent(at_origin, should_exist):
@@ -109,34 +117,26 @@ def treat_generic(repo, fs_dir, status_file, delete_on_missing=False):
 
             return (_is_consistent(at_origin=False, should_exist=local_should_exist) and 
                     _is_consistent(at_origin=True, should_exist=origin_should_exist))
-        
-        if status_file == config.MISSING_FILES:
-            correct = is_consistent(local_should_exist=False, origin_should_exist=True)
-                
-        elif status_file == config.NEW_FILES:
-            correct = is_consistent(local_should_exist=True, origin_should_exist=False)
-                
-        elif status_file == config.DIFFERENT_FILES:
-            correct = is_consistent(local_should_exist=True, origin_should_exist=True)
-                            
-        elif status_file == config.MOVED_FILES:
-            moved_from = status_files[status]["moved_from"]
 
-            correct = (is_consistent(local_should_exist=True, origin_should_exist=False) and
-                       is_consistent(local_should_exist=False, origin_should_exist=True, filename=moved_from))
-        else:
-            assert False # should not come here
+        test_consistency = {
+            config.MISSING_FILES: lambda : is_consistent(local_should_exist=False, origin_should_exist=True),
+            config.NEW_FILES: lambda: is_consistent(local_should_exist=True, origin_should_exist=False),
+            config.DIFFERENT_FILES:lambda: is_consistent(local_should_exist=True, origin_should_exist=True),
+            config.MOVED_FILES: lambda: (is_consistent(local_should_exist=True, origin_should_exist=False) and
+                                         is_consistent(local_should_exist=False, origin_should_exist=True, filename=status_files[status]["moved_from"]))
+            }
             
-        if not correct:
+        if not test_consistency[status_file]:
             has_incorrect = True
             del status_files[status]
             continue
-                
+        
         symlink(origin)
         
-        if do_difference and not origin == fs_dir:
-            symlink(fs_dir)
-
+        if do_difference:
+            if origin != fs_dir:
+                symlink(fs_dir)
+        
     if has_incorrect:
         log.warn("Is the database up-to-date?")
         
@@ -217,14 +217,17 @@ def treat_generic(repo, fs_dir, status_file, delete_on_missing=False):
             has_local = os.path.exists(local_symname)
             has_origin = os.path.exists(origin_symname)
 
-            if has_local and has_local: pass # ignore
+            if has_local and has_origin: pass # ignore
             elif has_local: # keep local
                 save_file(fs_dir, origin)
-            else: # keep origin
+            elif has_origin: # keep origin
                 save_file(origin, fs_dir)
+            else:
+                log.warn("{}: local and origin files deleted, nothing to do ...".format(filename))
                 
         elif os.path.exists(os.path.join(status_dir, filename)):
             save_file(origin, fs_dir)
+            
         elif delete_on_missing:
             delete_file()
             
