@@ -20,6 +20,10 @@ Options:
 
 from docopt import docopt
 
+# https://github.com/Infinidat/infi.docopt_completion
+# pip install infi.docopt-completion
+# sudo docopt-completion ./backup.py
+
 import os, sys, traceback
 import logging as log
 

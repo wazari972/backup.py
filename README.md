@@ -25,6 +25,20 @@ tools.
 Once the review is confirmed, the files are transfered. Then, the user
 can refresh the state of the status files, or update the database.
 
+INSTALL
+=======
+
+Just unzip.
+
+Shell completion
+----------------
+
+Thanks to `docopt` package, just run these commands:
+
+    # https://github.com/Infinidat/infi.docopt_completion
+    pip install infi.docopt-completion
+    sudo docopt-completion ./backup.py
+
 backup.py init
 ==============
 
